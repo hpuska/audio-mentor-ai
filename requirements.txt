@@ -2,5 +2,4 @@ streamlit
 librosa
 matplotlib
 numpy
-streamlit-wavesurfer
 pydub
