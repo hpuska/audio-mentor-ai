@@ -3,8 +3,8 @@ import librosa
 import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
-from pydub import AudioSegment
 import io
+import soundfile as sf
 
 # 1. KIELIVALINTA
 lang = st.sidebar.selectbox("Language / Kieli", ["English", "Suomi"])
@@ -24,7 +24,6 @@ if uploaded_file is not None:
     st.write("### 🎧 Playback & Waveform")
     st.audio(audio_bytes, format='audio/wav')
     
-    # Luodaan waveform
     fig, ax = plt.subplots(figsize=(12, 3))
     librosa.display.waveshow(y, sr=sr, ax=ax, color='#58a6ff')
     ax.set_facecolor('#0e1117')
@@ -36,23 +35,30 @@ if uploaded_file is not None:
     db_level = 20 * np.log10(rms) if rms > 0 else -100
     peak = np.max(np.abs(y))
 
-    # 4. MAGIC FIX (Normalisointi & Peak Limiting simulointi)
+    # 4. MAGIC FIX (Numpy-pohjainen normalisointi)
     st.write("---")
     st.write("### ✨ Magic Fix (Beta)")
     if st.button("Apply Automatic Fixes" if not is_fi else "Suorita automaattinen korjaus"):
         with st.spinner("Processing..."):
-            # Käytetään pydubia korjaukseen
-            audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
-            # Normalisoidaan -1.0 dB:iin (standardi)
-            fixed_audio = audio_segment.normalize(headroom=1.0)
+            # Normalisointi: Etsitään suurin huippu ja skaalataan se -1dB (0.89) tasolle
+            target_peak = 0.89 
+            current_peak = np.max(np.abs(y))
             
-            # Tallennetaan puskuriin
-            buffer = io.BytesIO()
-            fixed_audio.export(buffer, format="wav")
-            
-            st.success("Fix Applied! / Korjaus suoritettu!")
-            st.audio(buffer, format='audio/wav')
-            st.download_button("Download Fixed Audio", buffer, file_name="fixed_audio.wav")
+            if current_peak > 0:
+                # Lasketaan kerroin ja skaalataan koko array
+                scaling_factor = target_peak / current_peak
+                y_fixed = y * scaling_factor
+                
+                # Tallennetaan korjattu audio muistiin (WAV-muodossa)
+                buffer = io.BytesIO()
+                sf.write(buffer, y_fixed, sr, format='WAV')
+                buffer.seek(0)
+                
+                st.success("Fix Applied! / Korjaus suoritettu!")
+                st.audio(buffer, format='audio/wav')
+                st.download_button("Download Fixed Audio", buffer, file_name="fixed_audio.wav")
+            else:
+                st.error("Audio is empty or silent.")
 
     # 5. DIAGNOSTIIKKA
     st.write("---")
