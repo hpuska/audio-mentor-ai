@@ -4,10 +4,9 @@ import librosa.display
 import matplotlib.pyplot as plt
 import numpy as np
 
-# 1. SIVUN ASETUKSET JA TYYLIT
-st.set_page_config(page_title="Audio Mentor AI", layout="wide")
+# SIVUN ASETUKSET
+st.set_page_config(page_title="Audio Mentor Pro", layout="wide")
 
-# Muokataan ulkoasua hieman ammattimaisemmaksi
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: white; }
@@ -16,88 +15,86 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🎙️ Audio Mentor AI")
+st.title("🎙️ Audio Mentor Pro")
 st.write("---")
-st.subheader("Audiovisuaalisen laadun diagnostiikka- ja oppimisalusta")
-st.info("Tämä työkalu analysoi äänitiedostosi teknisen laadun ja opastaa sinua tekemään parempia miksauksia.")
 
-# 2. TIEDOSTON LATAUS
-uploaded_file = st.file_uploader("Lataa äänitiedosto (.wav tai .mp3)", type=["wav", "mp3"])
+uploaded_file = st.file_uploader("Lataa äänitiedosto", type=["wav", "mp3"])
 
 if uploaded_file is not None:
-    # Ladataan audio librosalla
-    with st.spinner('Analysoidaan tiedostoa...'):
+    # 1. PLAYBACK - Lisätään soitin heti latauksen jälkeen
+    st.write("### 🎧 Kuuntele näyte")
+    st.audio(uploaded_file, format='audio/wav')
+    
+    with st.spinner('Analysoidaan teknisiä yksityiskohtia...'):
         y, sr = librosa.load(uploaded_file)
         
-        # Lasketaan kesto
-        duration = librosa.get_duration(y=y, sr=sr)
-        
-        # 3. VISUALISOINTI: Ääniaalto
+        # 2. VISUALISOINTI
         st.write("### 📊 Signaalin visualisointi")
         fig, ax = plt.subplots(figsize=(12, 3))
         librosa.display.waveshow(y, sr=sr, ax=ax, color='#4e8cff', alpha=0.8)
         ax.set_facecolor('#0e1117')
-        ax.set_xlabel("Aika (s)", color='white')
-        ax.set_ylabel("Amplitudi", color='white')
-        ax.tick_params(colors='white')
         fig.patch.set_facecolor('#0e1117')
         st.pyplot(fig)
 
-        # 4. TEKNINEN ANALYYSI
-        # Lasketaan RMS (keskiarvovoimakkuus)
+        # 3. ANALYYSI-LOGIIKKA
         rms = np.mean(librosa.feature.rms(y=y))
         db_level = 20 * np.log10(rms) if rms > 0 else -100
-        
-        # Lasketaan Peak (huippuarvo)
         peak = np.max(np.abs(y))
         
-        # Arvioidaan kohinataso (hiljaisimmat 10% pätkistä)
-        stft = np.abs(librosa.stft(y))
-        noise_floor_val = np.mean(np.sort(np.mean(stft, axis=0))[:int(len(stft[0])*0.1)])
-        noise_db = 20 * np.log10(noise_floor_val) if noise_floor_val > 0 else -100
+        # Taajuusanalyysi (EQ-ehdotuksia varten)
+        S = np.abs(librosa.stft(y))
+        freqs = librosa.fft_frequencies(sr=sr)
+        mean_coeffs = np.mean(S, axis=1)
+        
+        # Etsitään kuminan (low-end) ja kirkkauden (high-end) suhdetta
+        low_end = np.mean(mean_coeffs[(freqs >= 20) & (freqs <= 250)])
+        high_mid = np.mean(mean_coeffs[(freqs >= 2000) & (freqs <= 7000)])
+        high_air = np.mean(mean_coeffs[freqs > 10000])
 
         st.write("---")
-        
-        # 5. DIAGNOSTIIKKA JA OPETUS (Kaksi saraketta)
         col1, col2 = st.columns([2, 1])
 
         with col1:
-            st.write("### 🔍 Löydökset ja suositukset")
-            
-            # Voimakkuuden tarkistus
-            if db_level < -25:
-                with st.expander("❌ Ääni on liian hiljainen (Low Gain)"):
-                    st.error(f"Havaittu taso: {db_level:.1f} dB")
-                    st.write("**Miksi tämä on ongelma?** Hiljainen äänitys vaatii tason nostoa digitaalisesti, mikä korostaa kohinaa (noise floor).")
-                    st.info("💡 **Suositus:** Nosta gainia äänitysvaiheessa tai käytä 'Normalisointia'. Tavoittele n. -18...-14 dB RMS-tasoa.")
-            
-            # Säröytymisen tarkistus
-            if peak > 0.98:
-                with st.expander("⚠️ Signaali clippaa (Peak Distortion)"):
-                    st.warning(f"Huippuarvo: {peak:.2f}")
-                    st.write("**Miksi tämä on ongelma?** Digitaalinen särö on peruuttamatonta. Ääniaallon huiput leikkautuvat pois, mikä kuulostaa rätinältä.")
-                    st.info("💡 **Suositus:** Laske sisääntulon tasoa. Jätä vähintään 3-6 dB 'headroomia' eli varaa huipuille.")
-            
-            # Kohinan tarkistus
-            if noise_db > -45:
-                with st.expander("⚠️ Korkea pohjakohina (Noise Floor)"):
-                    st.warning(f"Arvioitu kohina: {noise_db:.1f} dB")
-                    st.write("**Miksi tämä on ongelma?** Taustalla kuuluva suhina tai humina heikentää puheen selkeyttä ja ammattimaisuutta.")
-                    st.info("💡 **Suositus:** Käytä Noise Gatea tai kevyttä Noise Reductionia (esim. iZotope RX). Tarkista huoneen akustiikka.")
+            st.write("### 🔍 Diagnostiikka & Korjausehdotukset")
 
-            if db_level >= -25 and peak <= 0.98 and noise_db <= -45:
-                st.success("✅ Tekniset arvot ovat erinomaisella tasolla!")
+            # EQ-EHDOTUKSET
+            with st.expander("🎸 Taajuustasapaino & EQ"):
+                if low_end > np.mean(mean_coeffs) * 2:
+                    st.warning("Havaittu kuminointia (Muddy low-end).")
+                    st.info("💡 **Neuvo:** Kokeile High-Pass Filteriä (HPF) n. 80-100 Hz kohdalle poistaaksesi turhan kuminan.")
+                elif high_mid < np.mean(mean_coeffs) * 0.5:
+                    st.info("Ääni on hieman tunkkainen.")
+                    st.info("💡 **Neuvo:** Kokeile pientä 'Presence boostia' 3-5 kHz alueella parantaaksesi selkeyttä.")
+                else:
+                    st.success("Taajuustasapaino vaikuttaa luonnolliselta.")
+
+            # DE-ESSER (Sibilanssi)
+            if high_mid > np.mean(mean_coeffs) * 1.5:
+                with st.expander("⚡ Sibilanssi (Terävät ässät)"):
+                    st.warning("Havaittu voimakkaita korkeita taajuuksia (S-äänet).")
+                    st.info("💡 **Neuvo:** Käytä De-Esseriä välillä 5-8 kHz. Tämä pehmentää teräviä suhinoita vaikuttamatta puheen selkeyteen.")
+
+            # KAIUNPOISTO (Reverb Detection)
+            # Arvioidaan äänen hännän pituutta yksinkertaistetusti
+            if np.mean(librosa.feature.spectral_flatness(y=y)) < 0.01:
+                with st.expander("🏠 Huonekaiku (Reverb)"):
+                    st.warning("Äänessä tuntuu olevan paljon heijastuksia.")
+                    st.info("💡 **Neuvo:** Käytä De-Reverb -työkalua. Seuraavalla kerralla kokeile akustoida tilaa tai tuo mikki lähemmäs puhujaa.")
+
+            # KOHINANPOISTO
+            stft_noise = np.mean(S, axis=1)
+            noise_floor = 20 * np.log10(np.percentile(stft_noise, 10))
+            if noise_floor > -50:
+                with st.expander("🔇 Pohjakohina (Noise Floor)"):
+                    st.error(f"Korkea kohinataso: {noise_floor:.1f} dB")
+                    st.info("💡 **Neuvo:** Käytä Noise Reductionia tai Noise Gatea. Gate katkaisee äänen, kun kukaan ei puhu.")
 
         with col2:
-            st.write("### 📈 Tekniset arvot")
-            st.metric("Keskiarvo (RMS)", f"{db_level:.1f} dB")
-            st.metric("Huippuarvo (Peak)", f"{peak:.2f}")
-            st.metric("Kohinataso (Est.)", f"{noise_db:.1f} dB")
-            st.write(f"Tiedoston kesto: {duration:.1f} sekuntia")
-            
+            st.write("### 📈 Tekniset mittarit")
+            st.metric("LUFS/RMS", f"{db_level:.1f} dB")
+            st.metric("Peak Max", f"{peak:.2f}")
             st.write("---")
-            if st.button("Lataa tekninen raportti (Demo)"):
-                st.write("Raportin generointi on tulossa pian!")
+            st.caption("Nämä analyysit perustuvat signaalinkäsittelyyn ja auttavat ymmärtämään audion teknistä laatua.")
 
 else:
-    st.write("Odotetaan tiedostoa...")
+    st.write("Lataa äänitiedosto aloittaaksesi analyysin.")
